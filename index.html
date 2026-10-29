@@ -118,6 +118,9 @@ a.btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:n
     <div class="wide">
       <button class="ghost" id="selAll">Tout cocher</button>
       <button class="ghost" id="selNone">Tout décocher</button>
+      <button class="ghost" id="exportBtn">Exporter</button>
+      <button class="ghost" id="importBtn">Importer</button>
+      <input id="importFile" type="file" accept=".json,application/json" hidden>
     </div>
   </div>
 
@@ -523,6 +526,70 @@ function setStatus(html) {
   box.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
+/* ---------- Sauvegarde : exporter et importer ---------- */
+
+async function exportBackup() {
+  const data = { app: 'planificateur-taches', version: 1, exportedAt: new Date().toISOString(), tasks };
+  const text = JSON.stringify(data, null, 2);
+  const stamp = new Date().toISOString().slice(0, 10);
+  const file = new File([text], 'taches-sauvegarde-' + stamp + '.json', { type: 'application/json' });
+
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'Sauvegarde des tâches' });
+      setStatus('<p>Sauvegarde envoyée (' + tasks.length + ' tâche(s)).</p>');
+      return;
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+  }
+
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = file.name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  setStatus('<p>Sauvegarde téléchargée (' + tasks.length + ' tâche(s)). Garde ce fichier pour le recharger plus tard.</p>');
+}
+
+function importBackup(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data;
+    try { data = JSON.parse(reader.result); }
+    catch (e) { setStatus('<p>Fichier illisible : ce n’est pas une sauvegarde valide.</p>'); return; }
+    const list = Array.isArray(data) ? data : (data && Array.isArray(data.tasks) ? data.tasks : null);
+    if (!list) { setStatus('<p>Fichier non reconnu : aucune tâche trouvée dedans.</p>'); return; }
+
+    let added = 0, updated = 0;
+    for (const raw of list) {
+      if (!raw || typeof raw.quoi !== 'string' || !raw.quoi.trim()) continue;
+      const t = {
+        id: String(raw.id || Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
+        quoi: raw.quoi.trim(),
+        comment: String(raw.comment || ''),
+        date: String(raw.date || ''),
+        heure: String(raw.heure || ''),
+        duree: String(raw.duree || '30'),
+        imp: !!raw.imp,
+        urg: !!raw.urg,
+        done: !!raw.done
+      };
+      const i = tasks.findIndex(x => x.id === t.id);
+      if (i >= 0) { tasks[i] = t; updated++; }
+      else { tasks.push(t); added++; }
+    }
+    save();
+    render();
+    setStatus('<p>Import terminé : ' + added + ' tâche(s) ajoutée(s), ' + updated + ' mise(s) à jour.</p>');
+  };
+  reader.onerror = () => setStatus('<p>Impossible de lire ce fichier.</p>');
+  reader.readAsText(file);
+}
+
 /* ---------- Événements ---------- */
 
 document.getElementById('addBtn').addEventListener('click', e => { e.preventDefault(); submitForm(); });
@@ -532,6 +599,13 @@ document.getElementById('filter').addEventListener('change', render);
 document.getElementById('selAll').addEventListener('click', () => selectVisible(true));
 document.getElementById('selNone').addEventListener('click', () => selectVisible(false));
 document.getElementById('bulkBtn').addEventListener('click', exportIcs);
+document.getElementById('exportBtn').addEventListener('click', exportBackup);
+document.getElementById('importBtn').addEventListener('click', () => document.getElementById('importFile').click());
+document.getElementById('importFile').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (f) importBackup(f);
+  e.target.value = '';
+});
 render();
 
 if ('serviceWorker' in navigator) {
