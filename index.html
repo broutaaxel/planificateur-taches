@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2563eb">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Planificateur de tâches</title>
+<style>
+:root{--bg:#f6f7f9;--surface:#fff;--text:#1d2129;--muted:#6b7280;--border:#e5e7eb;--accent:#2563eb;--q1:#dc2626;--q2:#2563eb;--q3:#d97706;--q4:#6b7280;color-scheme:light}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#111318;--surface:#1b1e26;--text:#e5e7eb;--muted:#9ca3af;--border:#2d313c;--accent:#60a5fa;--q1:#f87171;--q2:#60a5fa;--q3:#fbbf24;--q4:#9ca3af;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;padding-top:env(safe-area-inset-top,0px);padding-bottom:calc(90px + env(safe-area-inset-bottom,0px))}
+.wrap{max-width:640px;margin:0 auto;padding:16px}
+h1{font-size:1.4rem;margin:8px 0 16px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px}
+label{display:block;font-size:.85rem;color:var(--muted);margin:10px 0 4px}
+input,textarea,select{width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font:inherit}
+textarea{min-height:90px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.92rem}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.toggles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.toggle{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:.95rem;color:var(--text)}
+.toggle input{width:auto}
+button{font:inherit;border:0;border-radius:8px;padding:10px 14px;cursor:pointer;background:var(--accent);color:#fff}
+button.ghost{background:transparent;color:var(--muted);border:1px solid var(--border)}
+button.full{width:100%;margin-top:14px}
+button[hidden]{display:none}
+.toolbar{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.toolbar .wide{grid-column:1 / -1;display:flex;gap:8px;flex-wrap:wrap}
+.toolbar button{padding:8px 10px;font-size:.85rem}
+.toolbar select{padding:8px}
+.quad{margin-bottom:20px}
+.quad h2{font-size:1rem;margin:0 0 8px;display:flex;align-items:center;gap:8px}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.task{display:flex;gap:10px;background:var(--surface);border:1px solid var(--border);border-left:4px solid;border-radius:10px;padding:12px;margin-bottom:8px}
+.task.done{opacity:.5}
+.task.done h3{text-decoration:line-through}
+.task.dragging{opacity:.4}
+.task.over{outline:2px dashed var(--accent);outline-offset:2px}
+.task input[type=checkbox]{width:20px;height:20px;margin-top:2px;flex-shrink:0}
+.handle{touch-action:none;cursor:grab;color:var(--muted);font-size:1.1rem;line-height:1;padding:2px 4px;user-select:none;-webkit-user-select:none;flex-shrink:0}
+.body{flex:1;min-width:0}
+.task h3{margin:0 0 4px;font-size:1rem;word-wrap:break-word}
+.meta{font-size:.8rem;color:var(--muted);margin-bottom:6px}
+.comment{font-size:.92rem;margin-bottom:8px;word-wrap:break-word}
+.comment p{margin:0 0 4px}
+.comment ul{margin:2px 0 4px;padding-left:20px}
+.dropzone{min-height:28px;border:1px dashed transparent;border-radius:8px;margin-top:4px;font-size:.8rem;color:var(--muted);display:flex;align-items:center;justify-content:center}
+.dropzone.over{border-color:var(--accent);color:var(--accent)}
+.actions{display:flex;gap:6px;flex-wrap:wrap}
+.actions button,a.btn{padding:6px 10px;font-size:.85rem}
+a.btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;border-radius:8px}
+.bulk{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--border);padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));display:flex;gap:10px;align-items:center;justify-content:space-between}
+.bulk .count{font-size:.9rem;color:var(--muted)}
+.status{margin-top:12px;scroll-margin-bottom:120px}
+.status p{font-size:.9rem;color:var(--muted);margin:0 0 8px}
+.empty{color:var(--muted);text-align:center;padding:20px}
+.hint{font-size:.8rem;color:var(--muted);margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Planificateur de tâches</h1>
+
+  <div class="card">
+    <form id="form" onsubmit="return false">
+      <label for="quoi">Quoi : la tâche</label>
+      <input id="quoi" type="text" placeholder="Ex. Préparer le chapitre 3 du cours" required>
+
+      <label for="comment">Comment : les étapes ou détails</label>
+      <textarea id="comment" placeholder="- Relire les slides&#10;- Écrire **3 exemples**&#10;- Faire le *quiz*"></textarea>
+      <p class="hint">Liste : une ligne par élément, commencée par un tiret (-). Gras : **texte**. Italique : *texte*.</p>
+
+      <div class="row">
+        <div>
+          <label for="date">Quand : date</label>
+          <input id="date" type="date">
+        </div>
+        <div>
+          <label for="heure">Heure (facultatif)</label>
+          <input id="heure" type="time">
+        </div>
+      </div>
+
+      <label for="duree">Durée estimée</label>
+      <select id="duree">
+        <option value="15">15 min</option>
+        <option value="30" selected>30 min</option>
+        <option value="60">1 h</option>
+        <option value="120">2 h</option>
+        <option value="240">4 h</option>
+      </select>
+
+      <div class="toggles">
+        <label class="toggle"><input id="imp" type="checkbox"> Important</label>
+        <label class="toggle"><input id="urg" type="checkbox"> Urgent</label>
+      </div>
+      <p class="hint">Important + urgent = faire maintenant. Ni l’un ni l’autre = plus tard.</p>
+
+      <button class="full" id="addBtn">Ajouter la tâche</button>
+      <button class="ghost full" id="cancelBtn" hidden>Annuler la modification</button>
+    </form>
+  </div>
+
+  <div class="toolbar">
+    <select id="sortBy" aria-label="Trier par">
+      <option value="priorite">Priorité (glisser pour ranger)</option>
+      <option value="date">Trier : date</option>
+      <option value="nom">Trier : nom</option>
+    </select>
+    <select id="filter" aria-label="Filtrer">
+      <option value="toutes">Toutes</option>
+      <option value="faire">À faire</option>
+      <option value="terminees">Terminées</option>
+    </select>
+    <div class="wide">
+      <button class="ghost" id="selAll">Tout cocher</button>
+      <button class="ghost" id="selNone">Tout décocher</button>
+    </div>
+  </div>
+
+  <div id="list"></div>
+  <div id="status" class="status"></div>
+</div>
+
+<div class="bulk">
+  <span class="count" id="count">0 sélectionnée</span>
+  <button id="bulkBtn">Ajouter à mon agenda</button>
+</div>
+
+<script>
+const KEY = 'planificateur-taches-v1';
+let tasks = [];
+try { tasks = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { tasks = []; }
+const selected = new Set();
+let editingId = null;
+
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(tasks)); } catch (e) {}
+}
+
+const QUAD = {
+  1: { name: 'Faire maintenant', color: 'var(--q1)' },
+  2: { name: 'Planifier', color: 'var(--q2)' },
+  3: { name: 'Faire vite ou déléguer', color: 'var(--q3)' },
+  4: { name: 'Plus tard', color: 'var(--q4)' }
+};
+
+function quadrant(imp, urg) {
+  if (imp && urg) return 1;
+  if (imp) return 2;
+  if (urg) return 3;
+  return 4;
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/* ---------- Markdown léger (listes, gras, italique) ---------- */
+
+function inlineMd(s) {
+  return s
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*(?!\s)(.+?)\*/g, '$1<em>$2</em>')
+    .replace(/(^|\W)_(?!\s)(.+?)_(?=\W|$)/g, '$1<em>$2</em>');
+}
+
+function renderMd(src) {
+  const out = [];
+  let inList = false;
+  for (const raw of esc(src).split('\n')) {
+    const m = raw.match(/^\s*[-*]\s+(.*)$/);
+    if (m) {
+      if (!inList) { out.push('<ul>'); inList = true; }
+      out.push('<li>' + inlineMd(m[1]) + '</li>');
+      continue;
+    }
+    if (inList) { out.push('</ul>'); inList = false; }
+    if (raw.trim()) out.push('<p>' + inlineMd(raw) + '</p>');
+  }
+  if (inList) out.push('</ul>');
+  return out.join('');
+}
+
+// Version texte pour l'agenda : les listes deviennent des puces, le gras et l'italique disparaissent
+function toPlain(src) {
+  return src.split('\n').map(line => {
+    const m = line.match(/^\s*[-*]\s+(.*)$/);
+    let s = m ? '• ' + m[1] : line;
+    return s.replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*(.+?)\*/g, '$1').replace(/_(.+?)_/g, '$1');
+  }).join('\n').trim();
+}
+
+/* ---------- Agenda ---------- */
+
+function pad(n) { return String(n).padStart(2, '0'); }
+function ymd(d) { return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()); }
+function ymdhms(d) { return ymd(d) + 'T' + pad(d.getHours()) + pad(d.getMinutes()) + '00'; }
+
+function gcalUrl(t) {
+  if (!t.date) return null;
+  let dates;
+  if (t.heure) {
+    const start = new Date(t.date + 'T' + t.heure);
+    const end = new Date(start.getTime() + (parseInt(t.duree, 10) || 30) * 60000);
+    dates = ymdhms(start) + '/' + ymdhms(end);
+  } else {
+    const start = new Date(t.date + 'T00:00');
+    const end = new Date(start.getTime() + 86400000);
+    dates = ymd(start) + '/' + ymd(end);
+  }
+  return 'https://calendar.google.com/calendar/render?action=TEMPLATE'
+    + '&text=' + encodeURIComponent(t.quoi)
+    + '&details=' + encodeURIComponent(toPlain(t.comment || ''))
+    + '&dates=' + dates;
+}
+
+function icsEscape(s) {
+  return String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+}
+
+function vevent(t) {
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  let when;
+  if (t.heure) {
+    const start = new Date(t.date + 'T' + t.heure);
+    const end = new Date(start.getTime() + (parseInt(t.duree, 10) || 30) * 60000);
+    when = 'DTSTART:' + ymdhms(start) + '\r\nDTEND:' + ymdhms(end);
+  } else {
+    const start = new Date(t.date + 'T00:00');
+    const end = new Date(start.getTime() + 86400000);
+    when = 'DTSTART;VALUE=DATE:' + ymd(start) + '\r\nDTEND;VALUE=DATE:' + ymd(end);
+  }
+  return [
+    'BEGIN:VEVENT',
+    'UID:' + t.id + '@planificateur',
+    'DTSTAMP:' + stamp,
+    when,
+    'SUMMARY:' + icsEscape(t.quoi),
+    'DESCRIPTION:' + icsEscape(toPlain(t.comment || '')),
+    'END:VEVENT'
+  ].join('\r\n');
+}
+
+async function exportIcs() {
+  const selList = tasks.filter(t => selected.has(t.id));
+  if (!selList.length) { setStatus('<p>Coche d’abord au moins une tâche, puis appuie à nouveau.</p>'); return; }
+  const list = selList.filter(t => t.date);
+  if (!list.length) { setStatus('<p>Les tâches cochées n’ont pas de date. Ajoute une date pour pouvoir les mettre dans l’agenda.</p>'); return; }
+  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Planificateur de taches//FR']
+    .concat(list.map(vevent))
+    .concat(['END:VCALENDAR'])
+    .join('\r\n');
+  const file = new File([ics], 'taches.ics', { type: 'text/calendar' });
+
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'Tâches à ajouter' });
+      setStatus('<p>' + list.length + ' tâche(s) envoyée(s) à ton agenda.</p>');
+      return;
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+  }
+
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'taches.ics';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  setStatus('<p>Fichier téléchargé. Ouvre-le depuis tes téléchargements pour l’ajouter à ton agenda.</p>');
+}
+
+/* ---------- Formulaire : ajout et modification ---------- */
+
+function resetForm() {
+  editingId = null;
+  document.getElementById('form').reset();
+  document.getElementById('duree').value = '30';
+  document.getElementById('addBtn').textContent = 'Ajouter la tâche';
+  document.getElementById('cancelBtn').hidden = true;
+}
+
+function startEdit(id) {
+  const t = tasks.find(x => x.id === id);
+  if (!t) return;
+  editingId = id;
+  document.getElementById('quoi').value = t.quoi;
+  document.getElementById('comment').value = t.comment || '';
+  document.getElementById('date').value = t.date || '';
+  document.getElementById('heure').value = t.heure || '';
+  document.getElementById('duree').value = t.duree || '30';
+  document.getElementById('imp').checked = !!t.imp;
+  document.getElementById('urg').checked = !!t.urg;
+  document.getElementById('addBtn').textContent = 'Enregistrer les modifications';
+  document.getElementById('cancelBtn').hidden = false;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  document.getElementById('quoi').focus();
+}
+
+function submitForm() {
+  const quoi = document.getElementById('quoi').value.trim();
+  if (!quoi) { document.getElementById('quoi').focus(); return; }
+  const data = {
+    quoi,
+    comment: document.getElementById('comment').value.trim(),
+    date: document.getElementById('date').value,
+    heure: document.getElementById('heure').value,
+    duree: document.getElementById('duree').value,
+    imp: document.getElementById('imp').checked,
+    urg: document.getElementById('urg').checked
+  };
+  if (editingId) {
+    const t = tasks.find(x => x.id === editingId);
+    if (t) Object.assign(t, data);
+  } else {
+    tasks.push(Object.assign({
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      done: false
+    }, data));
+  }
+  save();
+  resetForm();
+  render();
+}
+
+/* ---------- Actions sur les tâches ---------- */
+
+function toggleDone(id) {
+  const t = tasks.find(x => x.id === id);
+  if (t) { t.done = !t.done; save(); render(); }
+}
+
+function remove(id) {
+  tasks = tasks.filter(x => x.id !== id);
+  selected.delete(id);
+  if (editingId === id) resetForm();
+  save();
+  render();
+}
+
+function toggleSel(id, on) {
+  if (on) selected.add(id); else selected.delete(id);
+  updateBulk();
+}
+
+function selectVisible(on) {
+  visibleTasks().forEach(t => { if (on) selected.add(t.id); else selected.delete(t.id); });
+  render();
+}
+
+/* ---------- Déplacement par glisser-déposer (souris et tactile) ---------- */
+
+// Ordre manuel = ordre du tableau `tasks`. Déposer une carte dans un groupe change son importance/urgence.
+function moveTask(id, where) {
+  const idx = tasks.findIndex(x => x.id === id);
+  if (idx < 0) return;
+  const [t] = tasks.splice(idx, 1);
+  let q;
+  if (where.beforeId) {
+    const target = tasks.find(x => x.id === where.beforeId);
+    if (!target) { tasks.splice(idx, 0, t); return; }
+    q = quadrant(target.imp, target.urg);
+    tasks.splice(tasks.indexOf(target), 0, t);
+  } else {
+    q = where.q;
+    let last = -1;
+    tasks.forEach((x, i) => { if (quadrant(x.imp, x.urg) === q) last = i; });
+    tasks.splice(last + 1, 0, t);
+  }
+  t.imp = q === 1 || q === 2;
+  t.urg = q === 1 || q === 3;
+  save();
+}
+
+let drag = null;
+
+function clearOver() {
+  document.querySelectorAll('.over').forEach(el => el.classList.remove('over'));
+}
+
+document.addEventListener('pointerdown', e => {
+  const h = e.target.closest('.handle');
+  if (!h) return;
+  e.preventDefault();
+  drag = { id: h.dataset.id, el: h.closest('.task') };
+  if (drag.el) drag.el.classList.add('dragging');
+});
+
+document.addEventListener('pointermove', e => {
+  if (!drag) return;
+  e.preventDefault();
+  clearOver();
+  const under = document.elementFromPoint(e.clientX, e.clientY);
+  if (!under) return;
+  const t = under.closest('.task');
+  const z = under.closest('.dropzone');
+  if (t && t.dataset.id !== drag.id) t.classList.add('over');
+  else if (z) z.classList.add('over');
+});
+
+function endDrag(e) {
+  if (!drag) return;
+  const d = drag;
+  drag = null;
+  clearOver();
+  if (d.el) d.el.classList.remove('dragging');
+  if (e.type === 'pointercancel') return;
+  const under = document.elementFromPoint(e.clientX, e.clientY);
+  if (!under) return;
+  const t = under.closest('.task');
+  const z = under.closest('.dropzone');
+  if (t && t.dataset.id !== d.id) moveTask(d.id, { beforeId: t.dataset.id });
+  else if (z) moveTask(d.id, { q: Number(z.dataset.q) });
+  else return;
+  render();
+}
+document.addEventListener('pointerup', endDrag);
+document.addEventListener('pointercancel', endDrag);
+
+/* ---------- Affichage ---------- */
+
+function visibleTasks() {
+  const filter = document.getElementById('filter').value;
+  const sortBy = document.getElementById('sortBy').value;
+  let arr = tasks.filter(t => filter === 'toutes' || (filter === 'faire' && !t.done) || (filter === 'terminees' && t.done));
+  if (sortBy === 'priorite') return arr;
+  const cmpD = (a, b) => {
+    const da = a.date || '9999-12-31', db = b.date || '9999-12-31';
+    if (da !== db) return da < db ? -1 : 1;
+    const ha = a.heure || '99:99', hb = b.heure || '99:99';
+    return ha < hb ? -1 : ha > hb ? 1 : 0;
+  };
+  if (sortBy === 'date') arr.sort((a, b) => cmpD(a, b) || quadrant(a.imp, a.urg) - quadrant(b.imp, b.urg));
+  else arr.sort((a, b) => a.quoi.localeCompare(b.quoi, 'fr'));
+  return arr;
+}
+
+function taskHtml(t, q, draggable) {
+  const url = gcalUrl(t);
+  const color = QUAD[q].color;
+  return '<div class="task' + (t.done ? ' done' : '') + '" data-id="' + t.id + '" style="border-left-color:' + color + '">'
+    + (draggable ? '<span class="handle" data-id="' + t.id + '" title="Glisser pour déplacer">⋮⋮</span>' : '')
+    + '<input type="checkbox" aria-label="Sélectionner"' + (selected.has(t.id) ? ' checked' : '')
+    + ' onchange="toggleSel(\'' + t.id + '\', this.checked)">'
+    + '<div class="body">'
+    + '<h3>' + esc(t.quoi) + '</h3>'
+    + '<div class="meta">' + esc(formatDate(t)) + (t.date ? ' · ' + esc(t.duree) + ' min' : '') + ' · ' + esc(QUAD[q].name) + '</div>'
+    + (t.comment ? '<div class="comment">' + renderMd(t.comment) + '</div>' : '')
+    + '<div class="actions">'
+    + '<button class="ghost" onclick="toggleDone(\'' + t.id + '\')">' + (t.done ? 'Rouvrir' : 'Terminé') + '</button>'
+    + '<button class="ghost" onclick="startEdit(\'' + t.id + '\')">Modifier</button>'
+    + (url ? '<a class="btn" href="' + esc(url) + '" target="_blank" rel="noopener">Google Agenda</a>' : '')
+    + '<button class="ghost" onclick="remove(\'' + t.id + '\')">Supprimer</button>'
+    + '</div></div></div>';
+}
+
+function formatDate(t) {
+  if (!t.date) return 'Sans date';
+  const d = new Date(t.date + 'T00:00');
+  let s = d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
+  if (t.heure) s += ' à ' + t.heure;
+  return s;
+}
+
+function render() {
+  const list = document.getElementById('list');
+  const sortBy = document.getElementById('sortBy').value;
+  if (!tasks.length) {
+    list.innerHTML = '<div class="empty">Aucune tâche pour l’instant. Ajoute ta première tâche ci-dessus.</div>';
+    updateBulk();
+    return;
+  }
+  const arr = visibleTasks();
+  if (!arr.length) {
+    list.innerHTML = '<div class="empty">Aucune tâche ne correspond à ce filtre.</div>';
+    updateBulk();
+    return;
+  }
+  let html = '';
+  if (sortBy === 'priorite') {
+    for (const q of [1, 2, 3, 4]) {
+      const group = arr.filter(t => quadrant(t.imp, t.urg) === q);
+      html += '<section class="quad"><h2><span class="dot" style="background:' + QUAD[q].color + '"></span>'
+        + esc(QUAD[q].name) + ' (' + group.length + ')</h2>';
+      html += group.map(t => taskHtml(t, q, true)).join('');
+      html += '<div class="dropzone" data-q="' + q + '">' + (group.length ? 'Dépose ici' : 'Glisse une tâche ici') + '</div>';
+      html += '</section>';
+    }
+  } else {
+    html = arr.map(t => taskHtml(t, quadrant(t.imp, t.urg), false)).join('');
+  }
+  list.innerHTML = html;
+  updateBulk();
+}
+
+function updateBulk() {
+  const n = tasks.filter(t => selected.has(t.id)).length;
+  document.getElementById('count').textContent = n + ' sélectionnée' + (n > 1 ? 's' : '');
+}
+
+function setStatus(html) {
+  const box = document.getElementById('status');
+  box.innerHTML = html;
+  box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+/* ---------- Événements ---------- */
+
+document.getElementById('addBtn').addEventListener('click', e => { e.preventDefault(); submitForm(); });
+document.getElementById('cancelBtn').addEventListener('click', e => { e.preventDefault(); resetForm(); });
+document.getElementById('sortBy').addEventListener('change', render);
+document.getElementById('filter').addEventListener('change', render);
+document.getElementById('selAll').addEventListener('click', () => selectVisible(true));
+document.getElementById('selNone').addEventListener('click', () => selectVisible(false));
+document.getElementById('bulkBtn').addEventListener('click', exportIcs);
+render();
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>
