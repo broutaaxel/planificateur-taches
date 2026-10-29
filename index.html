@@ -18,7 +18,15 @@ h1{font-size:1.4rem;margin:8px 0 16px}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px}
 label{display:block;font-size:.85rem;color:var(--muted);margin:10px 0 4px}
 input,textarea,select{width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font:inherit}
-textarea{min-height:90px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.92rem}
+.editor{min-height:110px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font:inherit;font-size:.95rem;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;outline:none;cursor:text}
+.editor:focus{border-color:var(--accent)}
+.editor:empty::before{content:attr(data-placeholder);color:var(--muted)}
+.editor .ln{min-height:1.45em}
+.editor .ln.li{padding-left:18px;text-indent:-14px}
+.editor .mk{color:var(--muted);opacity:.6}
+.editor .mk.bul{color:var(--accent);opacity:1;font-weight:700}
+.editor b{font-weight:700}
+.editor i{font-style:italic}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .toggles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
 .toggle{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:.95rem;color:var(--text)}
@@ -58,11 +66,6 @@ a.btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:n
 .status p{font-size:.9rem;color:var(--muted);margin:0 0 8px}
 .empty{color:var(--muted);text-align:center;padding:20px}
 .hint{font-size:.8rem;color:var(--muted);margin-top:8px}
-.preview{margin-top:8px;padding:10px 12px;border:1px dashed var(--border);border-radius:8px;background:var(--bg);font-size:.92rem;word-wrap:break-word;min-height:44px}
-.preview:empty::before{content:"Aperçu : ce que tu écris apparaîtra ici";color:var(--muted);font-size:.85rem}
-.preview p{margin:0 0 4px}
-.preview ul{margin:2px 0 4px;padding-left:20px}
-.preview-label{font-size:.8rem;color:var(--muted);margin-top:8px}
 </style>
 </head>
 <body>
@@ -75,10 +78,8 @@ a.btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:n
       <input id="quoi" type="text" placeholder="Ex. Préparer le chapitre 3 du cours" required>
 
       <label for="comment">Comment : les étapes ou détails</label>
-      <textarea id="comment" placeholder="- Relire les slides&#10;- Écrire **3 exemples**&#10;- Faire le *quiz*"></textarea>
-      <p class="hint">Liste : une ligne par élément, commencée par un tiret (-). Gras : **texte**. Italique : *texte*.</p>
-      <div class="preview-label">Aperçu</div>
-      <div id="preview" class="preview"></div>
+      <div id="comment" class="editor" contenteditable="true" data-placeholder="Ex. - Relire les slides, **gras**, *italique*"></div>
+      <p class="hint">Tape « - » puis espace pour une liste : Entrée ajoute l’élément suivant. Gras : **texte**. Italique : *texte*.</p>
 
       <div class="row">
         <div>
@@ -299,6 +300,180 @@ async function exportIcs() {
   setStatus('<p>Fichier téléchargé. Ouvre-le depuis tes téléchargements pour l’ajouter à ton agenda.</p>');
 }
 
+/* ---------- Éditeur : listes et mise en forme pendant l'écriture ---------- */
+
+const ed = document.getElementById('comment');
+let composing = false;
+const LIST_RE = /^(\s*)([-*]) /;
+
+// Mise en forme d'une ligne : le texte reste identique, seuls les balises d'affichage changent
+function inlineHtml(line) {
+  let h = esc(line);
+  if (LIST_RE.test(line)) h = h.replace(/^(\s*[-*] )/, '<span class="mk bul">$1</span>');
+  h = h.replace(/\*\*(.+?)\*\*/g, '<span class="mk">**</span><b>$1</b><span class="mk">**</span>');
+  h = h.replace(/(^|[^*])\*(?!\s)([^*]+?)\*/g, '$1<span class="mk">*</span><i>$2</i><span class="mk">*</span>');
+  return h;
+}
+
+function paintLine(el, text) {
+  el.className = 'ln' + (LIST_RE.test(text) ? ' li' : '');
+  el.innerHTML = inlineHtml(text) || '<br>';
+}
+
+function textOf(el) {
+  return el.textContent.replace(/\u00a0/g, ' ');
+}
+
+function renderLineHtml(line) {
+  return '<div class="ln' + (LIST_RE.test(line) ? ' li' : '') + '">' + (inlineHtml(line) || '<br>') + '</div>';
+}
+
+function currentLine() {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return null;
+  let n = sel.getRangeAt(0).startContainer;
+  while (n && n.parentNode !== ed) n = n.parentNode;
+  return n && n.nodeType === 1 ? n : null;
+}
+
+function caretCol(line) {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return 0;
+  const range = sel.getRangeAt(0);
+  const r = document.createRange();
+  r.selectNodeContents(line);
+  r.setEnd(range.startContainer, range.startOffset);
+  return r.toString().length;
+}
+
+function placeCaret(lineEl, col) {
+  const r = document.createRange();
+  const walker = document.createTreeWalker(lineEl, NodeFilter.SHOW_TEXT);
+  let rem = col, node, placed = false;
+  while ((node = walker.nextNode())) {
+    const len = node.nodeValue.length;
+    if (rem <= len) { r.setStart(node, rem); r.collapse(true); placed = true; break; }
+    rem -= len;
+  }
+  if (!placed) { r.selectNodeContents(lineEl); r.collapse(false); }
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(r);
+}
+
+function insertLineAfter(line, text) {
+  const d = document.createElement('div');
+  paintLine(d, text);
+  line.after(d);
+  return d;
+}
+
+// Enveloppe dans une ligne le texte tapé directement dans une zone vide
+function normalize() {
+  let last = null;
+  Array.from(ed.childNodes).forEach(n => {
+    if (n.nodeType === 1 && n.nodeName === 'DIV') return;
+    const d = document.createElement('div');
+    ed.insertBefore(d, n);
+    d.appendChild(n);
+    paintLine(d, textOf(d));
+    last = d;
+  });
+  if (last) placeCaret(last, textOf(last).length);
+}
+
+// Met en forme la ligne en cours sans toucher aux autres lignes
+function repaintCurrent() {
+  const line = currentLine();
+  if (!line) return;
+  const col = caretCol(line);
+  paintLine(line, textOf(line));
+  placeCaret(line, col);
+}
+
+// Entrée : continue la liste, ou sort de la liste si l'élément est vide
+function handleEnter() {
+  normalize();
+  const line = currentLine();
+  if (!line) return;
+  const text = textOf(line);
+  const col = caretCol(line);
+  const before = text.slice(0, col);
+  const after = text.slice(col);
+  const m = text.match(LIST_RE);
+
+  if (m) {
+    if (text.trim() === m[2]) {
+      paintLine(line, '');
+      placeCaret(line, 0);
+      return;
+    }
+    const prefix = m[1] + m[2] + ' ';
+    paintLine(line, before);
+    const nl = insertLineAfter(line, prefix + after);
+    placeCaret(nl, prefix.length);
+    return;
+  }
+
+  paintLine(line, before);
+  const nl = insertLineAfter(line, after);
+  placeCaret(nl, 0);
+}
+
+function afterInput() {
+  normalize();
+  if (ed.children.length === 1 && ed.textContent.trim() === '') { ed.innerHTML = ''; return; }
+  const line = currentLine();
+  if (!line) return;
+  const text = textOf(line);
+  const wasLi = line.classList.contains('li');
+  const isLi = LIST_RE.test(text);
+  // On ne remet en forme qu'à l'espace, au * fermant, ou quand une liste apparaît ou disparaît
+  if (wasLi !== isLi || /[ *]$/.test(text)) repaintCurrent();
+}
+
+ed.addEventListener('beforeinput', e => {
+  if (composing) return;
+  if (e.inputType === 'insertParagraph' || e.inputType === 'insertLineBreak') {
+    e.preventDefault();
+    handleEnter();
+    return;
+  }
+  if (e.inputType === 'deleteContentBackward') {
+    const line = currentLine();
+    if (!line) return;
+    const text = textOf(line);
+    if (/^\s*[-*] $/.test(text) && caretCol(line) === text.length) {
+      e.preventDefault();
+      paintLine(line, '');
+      placeCaret(line, 0);
+    }
+  }
+});
+
+ed.addEventListener('input', () => { if (!composing) afterInput(); });
+ed.addEventListener('compositionstart', () => { composing = true; });
+ed.addEventListener('compositionend', () => { composing = false; afterInput(); });
+
+ed.addEventListener('paste', e => {
+  e.preventDefault();
+  const txt = (e.clipboardData || window.clipboardData).getData('text/plain');
+  document.execCommand('insertText', false, txt);
+  setTimeout(() => {
+    setComment(getComment());
+    const last = ed.lastElementChild;
+    if (last) placeCaret(last, textOf(last).length);
+  }, 0);
+});
+
+function setComment(text) {
+  ed.innerHTML = text ? text.split('\n').map(renderLineHtml).join('') : '';
+}
+
+function getComment() {
+  return Array.from(ed.childNodes).map(n => n.nodeName === 'BR' ? '' : textOf(n)).join('\n');
+}
+
 /* ---------- Formulaire : ajout et modification ---------- */
 
 function resetForm() {
@@ -307,7 +482,7 @@ function resetForm() {
   document.getElementById('duree').value = '30';
   document.getElementById('addBtn').textContent = 'Ajouter la tâche';
   document.getElementById('cancelBtn').hidden = true;
-  updatePreview();
+  setComment('');
 }
 
 function startEdit(id) {
@@ -315,13 +490,12 @@ function startEdit(id) {
   if (!t) return;
   editingId = id;
   document.getElementById('quoi').value = t.quoi;
-  document.getElementById('comment').value = t.comment || '';
+  setComment(t.comment || '');
   document.getElementById('date').value = t.date || '';
   document.getElementById('heure').value = t.heure || '';
   document.getElementById('duree').value = t.duree || '30';
   document.getElementById('imp').checked = !!t.imp;
   document.getElementById('urg').checked = !!t.urg;
-  updatePreview();
   document.getElementById('addBtn').textContent = 'Enregistrer les modifications';
   document.getElementById('cancelBtn').hidden = false;
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -333,7 +507,7 @@ function submitForm() {
   if (!quoi) { document.getElementById('quoi').focus(); return; }
   const data = {
     quoi,
-    comment: document.getElementById('comment').value.trim(),
+    comment: getComment().trim(),
     date: document.getElementById('date').value,
     heure: document.getElementById('heure').value,
     duree: document.getElementById('duree').value,
@@ -601,10 +775,6 @@ function importBackup(file) {
 
 /* ---------- Événements ---------- */
 
-function updatePreview() {
-  document.getElementById('preview').innerHTML = renderMd(document.getElementById('comment').value);
-}
-document.getElementById('comment').addEventListener('input', updatePreview);
 document.getElementById('addBtn').addEventListener('click', e => { e.preventDefault(); submitForm(); });
 document.getElementById('cancelBtn').addEventListener('click', e => { e.preventDefault(); resetForm(); });
 document.getElementById('sortBy').addEventListener('change', render);
