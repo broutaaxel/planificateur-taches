@@ -58,6 +58,11 @@ a.btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:n
 .status p{font-size:.9rem;color:var(--muted);margin:0 0 8px}
 .empty{color:var(--muted);text-align:center;padding:20px}
 .hint{font-size:.8rem;color:var(--muted);margin-top:8px}
+.preview{margin-top:8px;padding:10px 12px;border:1px dashed var(--border);border-radius:8px;background:var(--bg);font-size:.92rem;word-wrap:break-word;min-height:44px}
+.preview:empty::before{content:"Aperçu : ce que tu écris apparaîtra ici";color:var(--muted);font-size:.85rem}
+.preview p{margin:0 0 4px}
+.preview ul{margin:2px 0 4px;padding-left:20px}
+.preview-label{font-size:.8rem;color:var(--muted);margin-top:8px}
 </style>
 </head>
 <body>
@@ -72,6 +77,8 @@ a.btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:n
       <label for="comment">Comment : les étapes ou détails</label>
       <textarea id="comment" placeholder="- Relire les slides&#10;- Écrire **3 exemples**&#10;- Faire le *quiz*"></textarea>
       <p class="hint">Liste : une ligne par élément, commencée par un tiret (-). Gras : **texte**. Italique : *texte*.</p>
+      <div class="preview-label">Aperçu</div>
+      <div id="preview" class="preview"></div>
 
       <div class="row">
         <div>
@@ -300,6 +307,7 @@ function resetForm() {
   document.getElementById('duree').value = '30';
   document.getElementById('addBtn').textContent = 'Ajouter la tâche';
   document.getElementById('cancelBtn').hidden = true;
+  updatePreview();
 }
 
 function startEdit(id) {
@@ -313,6 +321,7 @@ function startEdit(id) {
   document.getElementById('duree').value = t.duree || '30';
   document.getElementById('imp').checked = !!t.imp;
   document.getElementById('urg').checked = !!t.urg;
+  updatePreview();
   document.getElementById('addBtn').textContent = 'Enregistrer les modifications';
   document.getElementById('cancelBtn').hidden = false;
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -440,7 +449,7 @@ document.addEventListener('pointerup', endDrag);
 document.addEventListener('pointercancel', endDrag);
 
 /* ---------- Affichage ---------- */
- 
+
 function visibleTasks() {
   const filter = document.getElementById('filter').value;
   const sortBy = document.getElementById('sortBy').value;
@@ -592,6 +601,10 @@ function importBackup(file) {
 
 /* ---------- Événements ---------- */
 
+function updatePreview() {
+  document.getElementById('preview').innerHTML = renderMd(document.getElementById('comment').value);
+}
+document.getElementById('comment').addEventListener('input', updatePreview);
 document.getElementById('addBtn').addEventListener('click', e => { e.preventDefault(); submitForm(); });
 document.getElementById('cancelBtn').addEventListener('click', e => { e.preventDefault(); resetForm(); });
 document.getElementById('sortBy').addEventListener('change', render);
